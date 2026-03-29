@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>NFT Casino</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0f;
+            font-family: 'Inter', sans-serif;
+            color: #ffffff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff, #888);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .nft-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .nft-card {
+            background: #111118;
+            border-radius: 24px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid #1e1e28;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .nft-card:active {
+            transform: scale(0.98);
+        }
+
+        .nft-animation {
+            width: 100%;
+            aspect-ratio: 1;
+            background: #1a1a24;
+            border-radius: 20px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .nft-name {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .nft-price {
+            font-size: 20px;
+            font-weight: 700;
+            color: #ffd700;
+        }
+
+        .btn {
+            background: #2c2c3a;
+            border: none;
+            border-radius: 60px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+            background: #3a3a4a;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3a3a4a, #2a2a38);
+            border: 1px solid #4a4a5a;
+        }
+
+        .balance {
+            background: #111118;
+            border-radius: 60px;
+            padding: 12px 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            border: 1px solid #1e1e28;
+        }
+
+        .balance span {
+            color: #ffd700;
+            font-weight: 700;
+            font-size: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 3px solid #2c2c3a;
+            border-top-color: #ffd700;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 20px;
+            right: 20px;
+            background: #2a2a35;
+            border-radius: 60px;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 14px;
+            animation: slideUp 0.3s ease;
+            z-index: 1000;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(100px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎰 NFT CASINO</h1>
+            <p>Анимированные NFT подарки Telegram</p>
+        </div>
+
+        <div class="balance">
+            💰 Баланс: <span id="balance">0</span> $
+        </div>
+
+        <div id="nft-container" class="nft-grid">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 12px;">Загрузка NFT...</p>
+            </div>
+        </div>
+
+        <button class="btn btn-primary" id="refresh-btn">🔄 Обновить NFT</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
+
+        let userId = null;
+        let balance = 0;
+
+        const initData = tg.initDataUnsafe;
+        if (initData && initData.user) {
+            userId = initData.user.id;
+        }
+
+        async function getBalance() {
+            try {
+                const response = await fetch('/api/balance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId })
+                });
+                const data = await response.json();
+                balance = data.balance || 0;
+                document.getElementById('balance').innerText = balance;
+            } catch (e) {
+                console.error('Balance error:', e);
+                balance = Math.floor(Math.random() * 1000);
+                document.getElementById('balance').innerText = balance;
+            }
+        }
+
+        function getRandomNFTs() {
+            const nftModels = [
+                { id: 1, name: '🌟 Star Gift', price: 10, colors: ['#ffd700', '#ffaa00', '#ff6600'], type: 'star' },
+                { id: 2, name: '🎈 Balloon', price: 15, colors: ['#ff6b6b', '#ff8e8e', '#ffbaba'], type: 'balloon' },
+                { id: 3, name: '🎁 Gift Box', price: 20, colors: ['#6b5b95', '#8b7ab5', '#b5a5d5'], type: 'gift' },
+                { id: 4, name: '💎 Diamond', price: 50, colors: ['#4ecdc4', '#6ee7de', '#8ef5ee'], type: 'diamond' },
+                { id: 5, name: '🐻 Teddy Bear', price: 25, colors: ['#c4a47c', '#d4b48c', '#e4c4a4'], type: 'bear' },
+                { id: 6, name: '🎂 Cake', price: 30, colors: ['#ff85a1', '#ffa5c1', '#ffc5e1'], type: 'cake' },
+                { id: 7, name: '🌸 Flower', price: 12, colors: ['#ffb7b2', '#ffc8c3', '#ffdedb'], type: 'flower' },
+                { id: 8, name: '🪄 Magic Wand', price: 40, colors: ['#9b59b6', '#b573d0', '#cf8de8'], type: 'magic' },
+                { id: 9, name: '🔮 Crystal Ball', price: 35, colors: ['#5dade2', '#7dbdf2', '#9dddf2'], type: 'crystal' },
+                { id: 10, name: '👑 Crown', price: 100, colors: ['#f1c40f', '#f5d32f', '#f9e44f'], type: 'crown' }
+            ];
+            const shuffled = [...nftModels];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled.slice(0, 5);
+        }
+
+        function drawStar(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const outerR = Math.min(w, h) * 0.35;
+            const innerR = outerR * 0.4;
+            const spikes = 5;
+            let rot = Math.PI/2 * 3;
+            const step = Math.PI / spikes;
+            ctx.beginPath();
+            for (let i = 0; i < spikes; i++) {
+                const x1 = cx + Math.cos(rot) * outerR;
+                const y1 = cy + Math.sin(rot) * outerR;
+                ctx.lineTo(x1, y1);
+                rot += step;
+                const x2 = cx + Math.cos(rot) * innerR;
+                const y2 = cy + Math.sin(rot) * innerR;
+                ctx.lineTo(x2, y2);
+                rot += step;
+            }
+            ctx.closePath();
+            const pulse = 0.8 + Math.sin(t * 8) * 0.1;
+            ctx.fillStyle = `hsl(${45 + Math.sin(t * 3) * 10}, 100%, 60%)`;
+            ctx.fill();
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ffd700';
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBalloon(ctx, w, h, t) {
+            const cx = w/2, cy = h/2 - 10;
+            const r = Math.min(w, h) * 0.3;
+            const pulse = 1 + Math.sin(t * 5) * 0.03;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, r * pulse, r * 1.2 * pulse, 0, 0, Math.PI * 2);
+            ctx.fillStyle = `hsl(${350 + Math.sin(t * 4) * 20}, 70%, 60%)`;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(cx - 5, cy + r * 0.8);
+            ctx.lineTo(cx, cy + r * 1.2);
+            ctx.lineTo(cx + 5, cy + r * 0.8);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(cx, cy + r * 1.2);
+            ctx.lineTo(cx, cy + r * 1.6);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#888';
+            ctx.stroke();
+        }
+
+        function drawGift(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const size = Math.min(w, h) * 0.4;
+            const bob = Math.sin(t * 3) * 3;
+            ctx.fillStyle = `hsl(${280 + Math.sin(t * 2) * 20}, 60%, 50%)`;
+            ctx.fillRect(cx - size/2, cy - size/2 + bob, size, size);
+            ctx.fillStyle = `hsl(${280 + Math.sin(t * 2) * 20}, 80%, 40%)`;
+            ctx.fillRect(cx - size/6, cy - size/2 + bob, size/3, size);
+            ctx.fillRect(cx - size/2, cy - size/6 + bob, size, size/3);
+        }
+
+        function drawDiamond(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const size = Math.min(w, h) * 0.35;
+            const rot = t * 2;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rot);
+            ctx.beginPath();
+            ctx.moveTo(0, -size);
+            ctx.lineTo(size, 0);
+            ctx.lineTo(0, size);
+            ctx.lineTo(-size, 0);
+            ctx.closePath();
+            const gradient = ctx.createLinearGradient(-size, -size, size, size);
+            gradient.addColorStop(0, `hsl(${180 + Math.sin(t * 5) * 30}, 80%, 60%)`);
+            gradient.addColorStop(1, `hsl(${200 + Math.sin(t * 5) * 30}, 90%, 50%)`);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawBear(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const r = Math.min(w, h) * 0.25;
+            ctx.fillStyle = `hsl(${30 + Math.sin(t) * 5}, 70%, 50%)`;
+            ctx.beginPath();
+            ctx.arc(cx - r*0.6, cy - r*0.3, r*0.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + r*0.6, cy - r*0.3, r*0.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx, cy + r*0.2, r*0.7, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(cx - r*0.7, cy - r*0.4, r*0.12, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + r*0.7, cy - r*0.4, r*0.12, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx, cy + r*0.1, r*0.1, 0, Math.PI*2);
+            ctx.fill();
+        }
+
+        function drawCake(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const size = Math.min(w, h) * 0.35;
+            const layers = 3;
+            for (let i = 0; i < layers; i++) {
+                const yOffset = i * size * 0.3;
+                const wSize = size * (1 - i * 0.2);
+                ctx.fillStyle = `hsl(${340 + Math.sin(t * 2 + i) * 10}, 70%, 55%)`;
+                ctx.fillRect(cx - wSize/2, cy - size/2 + yOffset, wSize, size * 0.25);
+            }
+            for (let i = 0; i < 5; i++) {
+                ctx.fillStyle = `hsl(${50 + Math.sin(t * 5 + i) * 20}, 100%, 60%)`;
+                ctx.beginPath();
+                ctx.arc(cx - size*0.3 + i*size*0.15, cy - size*0.4, size*0.07, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+
+        function drawFlower(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const r = Math.min(w, h) * 0.2;
+            for (let i = 0; i < 6; i++) {
+                const angle = (i * Math.PI * 2 / 6) + t * 2;
+                const x = cx + Math.cos(angle) * r * 1.2;
+                const y = cy + Math.sin(angle) * r * 1.2;
+                ctx.beginPath();
+                ctx.arc(x, y, r * 0.6, 0, Math.PI*2);
+                ctx.fillStyle = `hsl(${60 + i * 60 + Math.sin(t * 3) * 20}, 80%, 60%)`;
+                ctx.fill();
+            }
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * 0.5, 0, Math.PI*2);
+            ctx.fillStyle = `hsl(40, 90%, 55%)`;
+            ctx.fill();
+        }
+
+        function drawMagic(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const len = Math.min(w, h) * 0.35;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - len);
+            ctx.lineTo(cx + len*0.3, cy + len*0.2);
+            ctx.lineTo(cx, cy);
+            ctx.lineTo(cx - len*0.3, cy + len*0.2);
+            ctx.closePath();
+            ctx.fillStyle = `hsl(${270 + Math.sin(t * 4) * 20}, 80%, 60%)`;
+            ctx.fill();
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.arc(cx + Math.sin(t * 8 + i) * 15, cy - len + Math.cos(t * 8 + i) * 10, 4, 0, Math.PI*2);
+                ctx.fillStyle = `hsl(${50 + Math.sin(t * 10 + i) * 360}, 100%, 60%)`;
+                ctx.fill();
+            }
+        }
+
+        function drawCrystal(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const size = Math.min(w, h) * 0.3;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(t);
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, -size);
+                ctx.lineTo(size*0.5, 0);
+                ctx.lineTo(0, size);
+                ctx.lineTo(-size*0.5, 0);
+                ctx.closePath();
+                ctx.fillStyle = `hsl(${190 + i * 30 + Math.sin(t * 3) * 20}, 80%, 65%)`;
+                ctx.fill();
+                ctx.rotate(Math.PI * 2 / 3);
+            }
+            ctx.restore();
+        }
+
+        function drawCrown(ctx, w, h, t) {
+            const cx = w/2, cy = h/2;
+            const size = Math.min(w, h) * 0.3;
+            ctx.beginPath();
+            ctx.moveTo(cx - size, cy);
+            ctx.lineTo(cx - size*0.6, cy - size);
+            ctx.lineTo(cx - size*0.2, cy - size*0.5);
+            ctx.lineTo(cx, cy - size*0.8);
+            ctx.lineTo(cx + size*0.2, cy - size*0.5);
+            ctx.lineTo(cx + size*0.6, cy - size);
+            ctx.lineTo(cx + size, cy);
+            ctx.closePath();
+            const pulse = 0.9 + Math.sin(t * 4) * 0.05;
+            ctx.fillStyle = `hsl(${50 + Math.sin(t * 3) * 10}, 100%, 55%)`;
+            ctx.fill();
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.arc(cx - size*0.6 + i*size*0.3, cy - size*0.7, 3, 0, Math.PI*2);
+                ctx.fillStyle = `hsl(${0 + Math.sin(t * 5 + i) * 360}, 100%, 60%)`;
+                ctx.fill();
+            }
+        }
+
+        function getDrawFunction(type) {
+            const funcs = {
+                star: drawStar,
+                balloon: drawBalloon,
+                gift: drawGift,
+                diamond: drawDiamond,
+                bear: drawBear,
+                cake: drawCake,
+                flower: drawFlower,
+                magic: drawMagic,
+                crystal: drawCrystal,
+                crown: drawCrown
+            };
+            return funcs[type] || drawStar;
+        }
+
+        function createNFTAnimation(canvas, nft, startTime) {
+            const ctx = canvas.getContext('2d');
+            const drawFunc = getDrawFunction(nft.type);
+            let animationId = null;
+            let time = startTime;
+
+            function animate() {
+                const w = canvas.clientWidth;
+                const h = canvas.clientHeight;
+                canvas.width = w;
+                canvas.height = h;
+                ctx.clearRect(0, 0, w, h);
+                time += 0.016;
+                drawFunc(ctx, w, h, time);
+                animationId = requestAnimationFrame(animate);
+            }
+            animate();
+            return () => cancelAnimationFrame(animationId);
+        }
+
+        function renderNFTs() {
+            const nfts = getRandomNFTs();
+            const container = document.getElementById('nft-container');
+            container.innerHTML = '';
+            const startTime = performance.now() / 1000;
+            const stopFunctions = [];
+
+            nfts.forEach(nft => {
+                const card = document.createElement('div');
+                card.className = 'nft-card';
+                card.innerHTML = `
+                    <div class="nft-animation">
+                        <canvas width="200" height="200" style="width:100%; height:auto; aspect-ratio:1;"></canvas>
+                    </div>
+                    <div class="nft-name">${nft.name}</div>
+                    <div class="nft-price">${nft.price}$</div>
+                    <button class="btn" data-price="${nft.price}" data-name="${nft.name}">🎲 Играть</button>
+                `;
+                container.appendChild(card);
+                const canvas = card.querySelector('canvas');
+                const stop = createNFTAnimation(canvas, nft, startTime);
+                stopFunctions.push(stop);
+                const btn = card.querySelector('.btn');
+                btn.addEventListener('click', () => {
+                    showToast(`🎰 Игра на ${nft.name} запущена! Ставка: ${nft.price}$`);
+                    tg.showPopup({
+                        title: 'NFT Casino',
+                        message: `Вы выбрали ${nft.name} за ${nft.price}$!\nФункция игры в разработке.`,
+                        buttons: [{ type: 'ok' }]
+                    });
+                });
+            });
+
+            window.cleanupAnimations = () => {
+                stopFunctions.forEach(stop => stop());
+            };
+        }
+
+        function showToast(message) {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerText = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2500);
+        }
+
+        getBalance();
+        renderNFTs();
+
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            if (window.cleanupAnimations) window.cleanupAnimations();
+            renderNFTs();
+            showToast('🔄 NFT обновлены');
+        });
+
+        tg.ready();
+    </script>
+</body>
+</html>
